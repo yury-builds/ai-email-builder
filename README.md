@@ -2,8 +2,6 @@
 
 Drag-and-drop email builder with a Claude-powered design assistant. Puck visual editor + react.email render + Resend test send.
 
-Standalone demo — not part of the Avocado Studio monorepo.
-
 ## Stack
 
 - **Next.js 15** (app router) on port 3030
