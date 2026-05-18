@@ -1,6 +1,6 @@
 # AI Email Builder
 
-Drag-and-drop email builder with a Claude-powered design assistant. Puck visual editor + react.email render + Resend test send.
+Drag-and-drop email builder with a Claude-powered design assistant. Composable react.email components, swappable brand themes (Verdant Fresh / Clinical Trust / Editorial Mono), Puck visual editor, Resend test send.
 
 ![AI Email Builder — Puck canvas with the AI assistant in the left sidebar and a welcome email being edited](docs/screenshot.jpg)
 
