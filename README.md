@@ -23,7 +23,7 @@ Open http://localhost:3030.
 
 ## Flow
 
-1. Pick a template on the landing page (welcome, magic link, order confirmation, newsletter, password reset).
+1. Pick a template on the landing page (welcome, re-engagement, event invite, product announcement, feedback survey, newsletter).
 2. Drag-edit blocks in the canvas, or chat with the AI ("make the CTA orange", "add a testimonial section").
 3. Preview switches between desktop / mobile / dark.
 4. Click "Send test" to ship the rendered HTML to your inbox via Resend.
