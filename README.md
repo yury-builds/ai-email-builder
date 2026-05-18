@@ -2,6 +2,8 @@
 
 Drag-and-drop email builder with a Claude-powered design assistant. Puck visual editor + react.email render + Resend test send.
 
+![AI Email Builder — Puck canvas with the AI assistant in the left sidebar and a welcome email being edited](docs/screenshot.jpg)
+
 ## Stack
 
 - **Next.js 15** (app router) on port 3030
