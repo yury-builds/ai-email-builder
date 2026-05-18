@@ -9,6 +9,21 @@ const THINKING_BUDGET = (() => {
   const v = Number(process.env.ANTHROPIC_THINKING_BUDGET ?? "0");
   return Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
 })();
+// When unset, falls back to the dynamic formula below (2048 base, bumped to
+// THINKING_BUDGET+2048 floored at 4096 when thinking is on). Anthropic requires
+// max_tokens > thinking budget_tokens, so set this above THINKING_BUDGET if both.
+const MAX_TOKENS_OVERRIDE = (() => {
+  const v = Number(process.env.ANTHROPIC_MAX_TOKENS ?? "");
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : undefined;
+})();
+// Unset = omit `temperature` from the request (Anthropic default = 1.0, current behavior).
+// Note: extended thinking requires temperature=1; setting this alongside THINKING_BUDGET>0 will be rejected by the API.
+const TEMPERATURE = (() => {
+  const raw = process.env.ANTHROPIC_TEMPERATURE?.trim();
+  if (!raw) return undefined;
+  const v = Number(raw);
+  return Number.isFinite(v) ? v : undefined;
+})();
 
 export type ChatTurn = { role: "user" | "assistant"; text: string };
 
@@ -151,7 +166,8 @@ export async function* streamPlan(
   const stream = client.messages.stream(
     {
       model: MODEL,
-      max_tokens: useThinking ? Math.max(THINKING_BUDGET + 2048, 4096) : 2048,
+      max_tokens: MAX_TOKENS_OVERRIDE ?? (useThinking ? Math.max(THINKING_BUDGET + 2048, 4096) : 2048),
+      ...(TEMPERATURE !== undefined ? { temperature: TEMPERATURE } : {}),
       system: systemPrompt(opts.doc),
       tools: [
         {
