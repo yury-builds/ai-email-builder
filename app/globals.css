@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #__next { height: 100%; }
+body { background: #f1f5f9; color: #0f172a; }
+
+/* Puck overrides — minimal */
+._Puck { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+
+/* Puck hardcodes `_PuckLayout { height: 100dvh }`, assuming it owns the full viewport.
+ * We host it under a studio header (~53px). Switching to `height: 100%` collapses Puck
+ * because its internal ancestor chain doesn't all carry explicit height. Subtracting the
+ * header keeps Puck on its own height model while staying inside the visible viewport.
+ * Attribute selector matches the CSS-module hash without coupling to its exact suffix. */
+[class*="_PuckLayout_"] { height: calc(100dvh - 53px) !important; }
