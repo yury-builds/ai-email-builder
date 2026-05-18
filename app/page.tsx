@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { templates } from "@/lib/templates";
+import { UserTemplatesGrid } from "@/components/UserTemplatesGrid";
 
 export default function HomePage() {
   return (
@@ -18,6 +19,7 @@ export default function HomePage() {
 
       <section className="px-8 py-12">
         <div className="max-w-5xl mx-auto">
+          <UserTemplatesGrid />
           <h2 className="text-sm uppercase tracking-wider text-slate-500 font-semibold mb-4">Start from a template</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {templates.map((t) => (

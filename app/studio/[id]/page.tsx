@@ -7,10 +7,12 @@ import { useParams } from "next/navigation";
 import type { Plugin } from "@puckeditor/core";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ChatPluginProvider } from "@/components/ChatPluginContext";
+import { SaveTemplateModal } from "@/components/SaveTemplateModal";
 import { SendModal } from "@/components/SendModal";
 import { VariablesPopover } from "@/components/VariablesPopover";
 import { applyOps, emptyDoc, ensureIds } from "@/lib/apply-ops";
 import { getTemplate } from "@/lib/templates";
+import { getUserTemplate } from "@/lib/user-templates";
 import type { EmailDoc, PlannerOp } from "@/lib/types";
 import type { PuckDispatchFn } from "@/components/PuckDispatchBridge";
 
@@ -31,7 +33,7 @@ export default function StudioPage() {
   const id = params?.id ?? "blank";
   const initial = React.useMemo<EmailDoc>(() => {
     if (id === "blank") return emptyDoc("Untitled email", "");
-    const tpl = getTemplate(id);
+    const tpl = getTemplate(id) ?? getUserTemplate(id);
     if (!tpl) return emptyDoc("Untitled email", "");
     return { ...tpl.doc, data: ensureIds(tpl.doc.data) };
   }, [id]);
@@ -39,6 +41,8 @@ export default function StudioPage() {
   const [doc, setDoc] = React.useState<EmailDoc>(initial);
   const [highlightedId, setHighlightedId] = React.useState<string | null>(null);
   const [sendOpen, setSendOpen] = React.useState(false);
+  const [saveOpen, setSaveOpen] = React.useState(false);
+  const [saveState, setSaveState] = React.useState<"idle" | "saved">("idle");
   const [renderedHtml, setRenderedHtml] = React.useState<string>("");
   const [copyState, setCopyState] = React.useState<"idle" | "copied">("idle");
   const [puckRemoteVersion, setPuckRemoteVersion] = React.useState(0);
@@ -157,6 +161,12 @@ export default function StudioPage() {
             {copyState === "copied" ? "Copied!" : "Copy HTML"}
           </button>
           <button
+            onClick={() => setSaveOpen(true)}
+            className="text-xs font-medium px-2.5 py-1.5 rounded-md text-slate-700 hover:bg-slate-100"
+          >
+            {saveState === "saved" ? "Saved!" : "Save as template"}
+          </button>
+          <button
             onClick={() => setSendOpen(true)}
             className="text-sm font-medium px-3 py-1.5 rounded-md bg-ink text-white hover:opacity-90"
           >
@@ -178,6 +188,16 @@ export default function StudioPage() {
         </div>
 
         {sendOpen ? <SendModal doc={doc} html={renderedHtml} onClose={() => setSendOpen(false)} /> : null}
+        {saveOpen ? (
+          <SaveTemplateModal
+            doc={doc}
+            onClose={() => setSaveOpen(false)}
+            onSaved={() => {
+              setSaveState("saved");
+              setTimeout(() => setSaveState("idle"), 1500);
+            }}
+          />
+        ) : null}
       </div>
     </ChatPluginProvider>
   );
