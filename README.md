@@ -43,3 +43,12 @@ chat msg ──► /api/plan (Claude) ──► op stream ──► applyOps   i
 ```
 
 Block schemas (Zod) are shared between the Puck config and the planner prompt, so the AI proposes ops that always round-trip through the canvas cleanly.
+
+## Braze publishing (prototype)
+
+Publish one email to many brands in Braze: a brand-themed template per brand, with shared header/footer as Braze Content Blocks, published to staging first and then promoted. Runs against a simulated Braze by default. Open a template and click **Publish to Braze**.
+
+- [How it works, setup and limitations](docs/braze-publishing.md)
+- [Paid alternatives to explore](docs/alternatives.md) — embeddable editors and SaaS builders with Braze integrations
+
+Tests: `pnpm test`.
