@@ -9,7 +9,7 @@ Drag-and-drop email builder with a Claude-powered design assistant. Composable r
 - **Next.js 15** (app router) on port 3030
 - **Puck** for the drag-and-drop canvas
 - **react.email** for cross-client HTML rendering
-- **Claude Sonnet 4.6** as the planner
+- **Claude Sonnet 5.5** as the planner
 - **Resend** for test sends
 
 ## Run

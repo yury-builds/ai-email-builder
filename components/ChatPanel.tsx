@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useChatPluginContext } from "./ChatPluginContext";
+import { describeOp, describeOps } from "@/lib/op-display";
 import type { ChatMessage, PlannerOp } from "@/lib/types";
 
 function renderInline(text: string): React.ReactNode {
@@ -137,7 +138,7 @@ export function ChatPanel() {
   const [partialThinking, setPartialThinking] = React.useState("");
   const [thinkingDone, setThinkingDone] = React.useState(false);
   const [thinkingExpanded, setThinkingExpanded] = React.useState(false);
-  const [streamedOps, setStreamedOps] = React.useState<PlannerOp[]>([]);
+  const [streamedOpLabels, setStreamedOpLabels] = React.useState<string[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const taRef = React.useRef<HTMLTextAreaElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -150,14 +151,14 @@ export function ChatPanel() {
 
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, pending, partialReply, partialThinking, streamedOps]);
+  }, [messages, pending, partialReply, partialThinking, streamedOpLabels]);
 
   function resetStreamingState() {
     setPartialReply("");
     setPartialThinking("");
     setThinkingDone(false);
     setThinkingExpanded(false);
-    setStreamedOps([]);
+    setStreamedOpLabels([]);
   }
 
   async function send(text: string) {
@@ -191,6 +192,7 @@ export function ChatPanel() {
       let buffer = "";
       let final: { reply: string; ops: PlannerOp[] } | null = null;
       const localStreamedOps: PlannerOp[] = [];
+      const localOpLabels: string[] = [];
 
       while (true) {
         const { value, done } = await reader.read();
@@ -221,12 +223,16 @@ export function ChatPanel() {
             case "reply_delta":
               setPartialReply((r) => r + event.text);
               break;
-            case "op_added":
-              // Apply each op live without remounting Puck.
+            case "op_added": {
+              // Describe against the pre-op doc so remove_block can still resolve
+              // the block type before it's gone.
+              const label = describeOp(event.op, docRef.current);
               onOpsRef.current([event.op], { remount: false });
               localStreamedOps.push(event.op);
-              setStreamedOps((arr) => [...arr, event.op]);
+              localOpLabels.push(label);
+              setStreamedOpLabels((arr) => [...arr, label]);
               break;
+            }
             case "done":
               final = event.result;
               break;
@@ -237,17 +243,19 @@ export function ChatPanel() {
       }
 
       if (final) {
-        // Re-apply the full validated set with remount: covers any ops the streaming
-        // heuristic missed AND triggers a single Puck remount at the end.
+        const remaining = final.ops.slice(localStreamedOps.length);
+        const remainingLabels = remaining.length
+          ? describeOps(docRef.current, remaining)
+          : [];
         const assistantMsg: ChatMessage = {
           id: crypto.randomUUID(),
           role: "assistant",
           text: final.reply || partialReply || "Done.",
           ops: final.ops,
+          opLabels: [...localOpLabels, ...remainingLabels],
           at: Date.now(),
         };
         setMessages((prev) => [...prev, assistantMsg]);
-        const remaining = final.ops.slice(localStreamedOps.length);
         if (remaining.length) {
           // Apply any ops the streaming heuristic missed (rare). Use remount: false
           // so Puck stays in sync via dispatch — no flash.
@@ -280,7 +288,7 @@ export function ChatPanel() {
     <div className="flex flex-col h-full bg-white">
       <div className="px-3 py-2 border-b border-slate-200">
         <div className="text-[11px] uppercase tracking-wide text-slate-500">AI assistant</div>
-        <div className="text-xs font-medium text-ink">Sonnet 4.6</div>
+        <div className="text-xs font-medium text-ink">Sonnet 5.5</div>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
@@ -315,10 +323,15 @@ export function ChatPanel() {
               ) : (
                 <MessageMarkdown text={m.text} />
               )}
-              {m.ops && m.ops.length > 0 ? (
-                <div className="mt-1 pt-1 border-t border-slate-300/50 text-[10px] text-slate-500">
-                  {m.ops.length} op{m.ops.length === 1 ? "" : "s"} applied
-                </div>
+              {m.opLabels && m.opLabels.length > 0 ? (
+                <ul className="mt-1 pt-1 border-t border-slate-300/50 text-[10px] text-slate-500 space-y-0.5">
+                  {m.opLabels.map((label, i) => (
+                    <li key={i} className="flex gap-1">
+                      <span className="text-emerald-600">✓</span>
+                      <span>{label}</span>
+                    </li>
+                  ))}
+                </ul>
               ) : null}
             </div>
           </div>
@@ -355,10 +368,15 @@ export function ChatPanel() {
                 <div className="text-slate-500 animate-pulse">Thinking…</div>
               ) : null}
 
-              {streamedOps.length > 0 ? (
-                <div className="pt-1 border-t border-slate-300/50 text-[10px] text-slate-500">
-                  Applied {streamedOps.length} op{streamedOps.length === 1 ? "" : "s"}…
-                </div>
+              {streamedOpLabels.length > 0 ? (
+                <ul className="pt-1 border-t border-slate-300/50 text-[10px] text-slate-500 space-y-0.5">
+                  {streamedOpLabels.map((label, i) => (
+                    <li key={i} className="flex gap-1">
+                      <span className="text-emerald-600">✓</span>
+                      <span>{label}</span>
+                    </li>
+                  ))}
+                </ul>
               ) : null}
             </div>
           </div>

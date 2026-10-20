@@ -1,3 +1,5 @@
+import { brandSeeds } from "./brand-seeds";
+
 export type Theme = {
   id: string;
   name: string;
@@ -97,6 +99,23 @@ export const themes: Record<string, Theme> = {
     sectionPadding: 32,
   },
 };
+
+// Derive a theme for every fixture brand from its base family + primary color.
+for (const seed of brandSeeds) {
+  if (themes[seed.id] || !seed.color) continue;
+  const base = themes[seed.family];
+  const hex = seed.color.replace("#", "");
+  themes[seed.id] = {
+    ...base,
+    id: seed.id,
+    name: seed.name,
+    logo: `https://placehold.co/160x40/${hex}/ffffff/png?text=${encodeURIComponent(seed.name)}`,
+    logoAlt: seed.name,
+    brand: seed.color,
+    linkColor: seed.color,
+    footerBg: base.footerBg === base.heading ? seed.color : base.footerBg,
+  };
+}
 
 export const defaultThemeId = "fresh";
 
