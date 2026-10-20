@@ -4,25 +4,22 @@ import { describeBlocksForPrompt } from "./schema";
 import { themes } from "./themes";
 import type { EmailDoc, PlannerOp } from "./types";
 
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
-const THINKING_BUDGET = (() => {
-  const v = Number(process.env.ANTHROPIC_THINKING_BUDGET ?? "0");
-  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5";
+// "off" (default) = `between_tools`, Sonnet 5.5's no-extended-thinking mode: the tool
+// input starts streaming right away, so reply chars and ops land progressively.
+// "adaptive" = the model decides how much to think first; deeper but slower first op.
+// Sonnet 5.5 rejects `budget_tokens` and `disabled`, so these are the only two modes.
+const THINKING: "off" | "adaptive" = process.env.ANTHROPIC_THINKING?.trim() === "adaptive" ? "adaptive" : "off";
+type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+const EFFORT: Effort = (() => {
+  const raw = process.env.ANTHROPIC_EFFORT?.trim() as Effort | undefined;
+  const v: Effort = raw && ["low", "medium", "high", "xhigh", "max"].includes(raw) ? raw : "medium";
+  // `between_tools` only accepts effort `high` or below.
+  return THINKING === "off" && (v === "xhigh" || v === "max") ? "high" : v;
 })();
-// When unset, falls back to the dynamic formula below (2048 base, bumped to
-// THINKING_BUDGET+2048 floored at 4096 when thinking is on). Anthropic requires
-// max_tokens > thinking budget_tokens, so set this above THINKING_BUDGET if both.
-const MAX_TOKENS_OVERRIDE = (() => {
+const MAX_TOKENS = (() => {
   const v = Number(process.env.ANTHROPIC_MAX_TOKENS ?? "");
-  return Number.isFinite(v) && v > 0 ? Math.floor(v) : undefined;
-})();
-// Unset = omit `temperature` from the request (Anthropic default = 1.0, current behavior).
-// Note: extended thinking requires temperature=1; setting this alongside THINKING_BUDGET>0 will be rejected by the API.
-const TEMPERATURE = (() => {
-  const raw = process.env.ANTHROPIC_TEMPERATURE?.trim();
-  if (!raw) return undefined;
-  const v = Number(raw);
-  return Number.isFinite(v) ? v : undefined;
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : THINKING === "adaptive" ? 16000 : 4096;
 })();
 
 export type ChatTurn = { role: "user" | "assistant"; text: string };
@@ -120,7 +117,8 @@ ${docLines.length > 0 ? docLines.join("\n") : "  (empty — nothing yet)"}
 9. Whenever the user asks for "two columns", "side-by-side", "left/right" content, image-left/text-right (or its reverse), or compares two things (features, plans, pros/cons), use ONE EmailColumns block — not two stacked EmailText/EmailImage blocks. EmailColumns now supports an optional image per side (leftImageUrl / rightImageUrl) above the heading + body. Leave any field that side doesn't need as an empty string.
 10. Image URLs: NEVER invent URLs like "https://yourcompany.com/hero.jpg" — they'll 404 and show a broken image icon. Either:
    a. Leave imageUrl/src/leftImageUrl/rightImageUrl as "" (empty string) — the renderer hides the slot cleanly, which is usually best.
-   b. Use a guaranteed-working placeholder: "https://placehold.co/600x300" for hero/image, "https://placehold.co/300x200" for column images, "https://placehold.co/120x40?text=YourLogo" for EmailHeader logos.`;
+   b. Use a guaranteed-working placeholder: "https://placehold.co/600x300" for hero/image, "https://placehold.co/300x200" for column images, "https://placehold.co/120x40?text=YourLogo" for EmailHeader logos.
+11. Emails are sent through Braze, so personalization uses Braze Liquid: standard attributes as {{\${first_name}}}, custom attributes as {{custom_attribute.\${tier}}}, always with a fallback for copy, e.g. {{\${first_name} | default: 'there'}}. Never write bare {{first_name}} — Braze renders it empty.`;
 }
 
 function previewOfProps(props: Record<string, unknown>): string {
@@ -160,35 +158,37 @@ export async function* streamPlan(
     return;
   }
 
-  const useThinking = THINKING_BUDGET > 0;
   const client = new Anthropic({ apiKey });
+
+  // SDK 0.96 types predate `between_tools` and the `display` field.
+  const thinking = (
+    THINKING === "adaptive" ? { type: "adaptive", display: "summarized" } : { type: "between_tools" }
+  ) as unknown as Anthropic.ThinkingConfigParam;
 
   const stream = client.messages.stream(
     {
       model: MODEL,
-      max_tokens: MAX_TOKENS_OVERRIDE ?? (useThinking ? Math.max(THINKING_BUDGET + 2048, 4096) : 2048),
-      ...(TEMPERATURE !== undefined ? { temperature: TEMPERATURE } : {}),
+      max_tokens: MAX_TOKENS,
+      thinking,
+      output_config: { effort: EFFORT },
       system: systemPrompt(opts.doc),
       tools: [
         {
           name: "apply_ops",
-          description: "Apply a list of operations to update the email document.",
+          description: "Apply a list of operations to update the email document. Call this on every turn.",
           input_schema: opSchema,
+          // Stream the tool input as it's generated instead of buffering it, so reply
+          // chars and each op land in the UI progressively. The API no longer validates
+          // the input in this mode — applyOp tolerates malformed ops by ignoring them.
+          eager_input_streaming: true,
         },
       ],
-      // Forced tool-choice = progressive `input_json_delta` streaming from token 1, so
-      // reply chars and each op land in the UI as they generate. Extended thinking
-      // requires `auto`, which makes Claude emit free text and then dump the whole
-      // tool input in one final burst — ops appear all at once. Keep thinking OFF
-      // unless you specifically want deeper reasoning.
-      tool_choice: useThinking
-        ? { type: "auto" as const }
-        : { type: "tool" as const, name: "apply_ops" },
+      // Sonnet 5.5 rejects forced tool_choice; system prompt rule 1 steers it to apply_ops.
+      tool_choice: { type: "auto" },
       messages: [
         ...opts.history.map((m) => ({ role: m.role, content: m.text })),
         { role: "user" as const, content: opts.message },
       ],
-      ...(useThinking ? { thinking: { type: "enabled" as const, budget_tokens: THINKING_BUDGET } } : {}),
     },
     // Forward the client AbortSignal so Stop cancels the upstream Anthropic request
     // instead of just closing the response — otherwise we'd keep paying for tokens
@@ -199,8 +199,9 @@ export async function* streamPlan(
   let toolJsonBuf = "";
   let lastReply = "";
   let lastEmittedOpIndex = -1;
-  let thinkingOpen = false;
-  // With tool_choice=auto + thinking, Claude may emit free `text_delta` BEFORE the
+  // Index of the open thinking block — `content_block_stop` only carries the index.
+  let thinkingIndex: number | null = null;
+  // With tool_choice=auto, Claude may emit free `text_delta` BEFORE the
   // tool_use input. We stream that text to the user as "reply". When the tool input
   // arrives it will repeat the same reply field — track whether we're still in the
   // pre-tool text phase so we don't re-emit those chars from input_json_delta.
@@ -214,15 +215,15 @@ export async function* streamPlan(
       delta?: { type?: string; partial_json?: string; text?: string; thinking?: string };
     }>) {
       if (event.type === "content_block_start") {
-        if (event.content_block?.type === "thinking" && !thinkingOpen) {
-          thinkingOpen = true;
+        if (event.content_block?.type === "thinking" && thinkingIndex === null) {
+          thinkingIndex = event.index ?? -1;
           yield { type: "thinking_start" };
         }
         continue;
       }
       if (event.type === "content_block_stop") {
-        if (thinkingOpen && event.content_block?.type === "thinking") {
-          thinkingOpen = false;
+        if (thinkingIndex !== null && (event.index ?? -1) === thinkingIndex) {
+          thinkingIndex = null;
           yield { type: "thinking_end" };
         }
         continue;
@@ -270,8 +271,8 @@ export async function* streamPlan(
       }
 
       if (event.delta.type === "text_delta") {
-        // Free text outside the tool call (only happens when tool_choice=auto and the
-        // model chats before/instead of calling the tool). Stream it as reply but track
+        // Free text outside the tool call (the model chatting before/instead of
+        // calling the tool). Stream it as reply but track
         // it separately so we can dedupe against the tool input's reply field.
         const text = event.delta.text ?? "";
         if (text) {
@@ -283,18 +284,21 @@ export async function* streamPlan(
     }
 
     const final = await stream.finalMessage();
-    let result: PlannerResult = { reply: lastReply || "Done.", ops: [] };
+    if ((final.stop_reason as string) === "refusal") {
+      yield { type: "error", message: "The model declined this request. Try rephrasing it." };
+      return;
+    }
+    // With tool_choice=auto the model may answer in plain text without calling
+    // apply_ops — treat that as a reply with no ops.
+    let result: PlannerResult = { reply: lastReply || freeTextReply || "Done.", ops: [] };
     for (const block of final.content) {
       if (block.type === "tool_use" && block.name === "apply_ops") {
         const input = block.input as { reply?: string; ops?: PlannerOp[] };
         result = {
-          reply: input.reply ?? lastReply ?? "Done.",
+          reply: input.reply || lastReply || freeTextReply || "Done.",
           ops: Array.isArray(input.ops) ? input.ops : [],
         };
         break;
-      }
-      if (block.type === "text" && !result.ops.length && !result.reply) {
-        result = { reply: block.text, ops: [] };
       }
     }
     // Emit any ops the streaming heuristic missed (e.g. the final element).

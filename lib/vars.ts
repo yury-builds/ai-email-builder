@@ -1,12 +1,15 @@
 import type { EmailDoc } from "./types";
+import { detectLiquidVars, renderLiquidPreview } from "./liquid";
 
-const VAR_RE = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
+// Personalization uses Braze Liquid (`{{${first_name}}}`, `{{custom_attribute.${tier}}}`).
+// Bare `{{first_name}}` still resolves in the canvas preview for older docs, but Braze
+// renders it empty — the publish check flags it.
 
 export function detectVars(doc: EmailDoc): string[] {
   const found = new Set<string>();
   function scan(value: unknown): void {
     if (typeof value === "string") {
-      for (const m of value.matchAll(VAR_RE)) found.add(m[1]);
+      for (const v of detectLiquidVars(value)) found.add(v);
     } else if (Array.isArray(value)) {
       for (const v of value) scan(v);
     } else if (value && typeof value === "object") {
@@ -21,10 +24,7 @@ export function detectVars(doc: EmailDoc): string[] {
 
 export function substituteVars(input: string, vars: Record<string, string> | undefined): string {
   if (!vars) return input;
-  return input.replace(VAR_RE, (match, key: string) => {
-    const v = vars[key];
-    return typeof v === "string" && v.length > 0 ? v : match;
-  });
+  return renderLiquidPreview(input, { attributes: vars, resolveBareNames: true, keepUnresolved: true }).output;
 }
 
 function mapStrings<T>(value: T, fn: (s: string) => string): T {

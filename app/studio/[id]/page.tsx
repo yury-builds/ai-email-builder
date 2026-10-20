@@ -9,10 +9,13 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { ChatPluginProvider } from "@/components/ChatPluginContext";
 import { SaveTemplateModal } from "@/components/SaveTemplateModal";
 import { SendModal } from "@/components/SendModal";
+import { PublishModal } from "@/components/PublishModal";
 import { VariablesPopover } from "@/components/VariablesPopover";
+import { PreviewAsDropdown } from "@/components/PreviewAsDropdown";
 import { applyOps, emptyDoc, ensureIds } from "@/lib/apply-ops";
 import { getTemplate } from "@/lib/templates";
 import { getUserTemplate } from "@/lib/user-templates";
+import { applyVarsToDoc } from "@/lib/vars";
 import type { EmailDoc, PlannerOp } from "@/lib/types";
 import type { PuckDispatchFn } from "@/components/PuckDispatchBridge";
 
@@ -42,10 +45,12 @@ export default function StudioPage() {
   const [highlightedId, setHighlightedId] = React.useState<string | null>(null);
   const [sendOpen, setSendOpen] = React.useState(false);
   const [saveOpen, setSaveOpen] = React.useState(false);
+  const [publishOpen, setPublishOpen] = React.useState(false);
   const [saveState, setSaveState] = React.useState<"idle" | "saved">("idle");
   const [renderedHtml, setRenderedHtml] = React.useState<string>("");
   const [copyState, setCopyState] = React.useState<"idle" | "copied">("idle");
   const [puckRemoteVersion, setPuckRemoteVersion] = React.useState(0);
+  const [previewProfileId, setPreviewProfileId] = React.useState<string | null>(null);
   const puckDispatchRef = React.useRef<PuckDispatchFn | null>(null);
   const docRef = React.useRef<EmailDoc>(initial);
   docRef.current = doc;
@@ -153,7 +158,26 @@ export default function StudioPage() {
               className="flex-1 max-w-md text-sm text-slate-600 px-2 py-1 rounded border border-transparent hover:border-slate-200 focus:border-accent focus:ring-2 focus:ring-accent/20 outline-none"
             />
           </div>
-          <VariablesPopover doc={doc} onChange={(vars) => setDoc((d) => ({ ...d, vars }))} />
+          <PreviewAsDropdown
+            selectedId={previewProfileId}
+            onSelect={(profile) => {
+              setPreviewProfileId(profile.id);
+              setDoc((d) => ({ ...d, vars: { ...profile.vars } }));
+              setPuckRemoteVersion((v) => v + 1);
+            }}
+            onClear={() => {
+              setPreviewProfileId(null);
+              setDoc((d) => ({ ...d, vars: {} }));
+              setPuckRemoteVersion((v) => v + 1);
+            }}
+          />
+          <VariablesPopover
+            doc={doc}
+            onChange={(vars) => {
+              setPreviewProfileId(null);
+              setDoc((d) => ({ ...d, vars }));
+            }}
+          />
           <button
             onClick={copyHtml}
             className="text-xs font-medium px-2.5 py-1.5 rounded-md text-slate-700 hover:bg-slate-100"
@@ -167,6 +191,12 @@ export default function StudioPage() {
             {saveState === "saved" ? "Saved!" : "Save as template"}
           </button>
           <button
+            onClick={() => setPublishOpen(true)}
+            className="text-xs font-medium px-2.5 py-1.5 rounded-md text-slate-700 hover:bg-slate-100"
+          >
+            Publish to Braze
+          </button>
+          <button
             onClick={() => setSendOpen(true)}
             className="text-sm font-medium px-3 py-1.5 rounded-md bg-ink text-white hover:opacity-90"
           >
@@ -174,11 +204,21 @@ export default function StudioPage() {
           </button>
         </header>
 
-        <div className="flex-1 flex min-h-0">
+        <div className="flex-1 flex min-h-0 flex-col">
+          {previewProfileId ? (
+            <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-200 text-[12px] text-amber-900 flex items-center justify-between">
+              <span>
+                Read-only preview — personalization tokens are being substituted live. Switch to <b>Default</b> to edit.
+              </span>
+            </div>
+          ) : null}
           <div className="flex-1 min-w-0">
             <EmailCanvas
-              data={doc.data}
-              onChange={(data) => setDoc((d) => ({ ...d, data }))}
+              data={previewProfileId ? applyVarsToDoc(doc).data : doc.data}
+              onChange={(data) => {
+                if (previewProfileId) return;
+                setDoc((d) => ({ ...d, data }));
+              }}
               highlightedId={highlightedId}
               chatPlugin={chatPlugin}
               remoteVersion={puckRemoteVersion}
@@ -188,6 +228,14 @@ export default function StudioPage() {
         </div>
 
         {sendOpen ? <SendModal doc={doc} html={renderedHtml} onClose={() => setSendOpen(false)} /> : null}
+        {publishOpen ? (
+          <PublishModal
+            doc={doc}
+            docKey={id}
+            defaultBrandId={(doc.data.root?.props as { theme?: string } | undefined)?.theme}
+            onClose={() => setPublishOpen(false)}
+          />
+        ) : null}
         {saveOpen ? (
           <SaveTemplateModal
             doc={doc}

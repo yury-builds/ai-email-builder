@@ -33,5 +33,6 @@ export type ChatMessage = {
   role: "user" | "assistant";
   text: string;
   ops?: PlannerOp[];
+  opLabels?: string[];
   at: number;
 };
